@@ -67,90 +67,104 @@ export function DocumentUploader() {
 
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
-      console.log('Starting real upload for:', file.name);
+      console.log('Starting upload for:', file.name, 'Size:', file.size, 'Type:', file.type);
       
-      // Phase 1: Upload to storage
-      setCurrentUpload(prev => prev ? { ...prev, status: 'uploading', statusMessage: 'Przesyłanie pliku...', progress: 20 } : null);
+      // Phase 1: Upload to storage with better error handling
+      setCurrentUpload(prev => prev ? { ...prev, status: 'uploading', statusMessage: 'Przesyłanie pliku...', progress: 25 } : null);
       
-      const fileName = `temp/${Date.now()}-${file.name}`;
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('documents-temp')
-        .upload(fileName, file);
-
-      if (uploadError) {
-        console.error('Upload error:', uploadError);
-        throw new Error(`Upload failed: ${uploadError.message}`);
-      }
-
-      // Phase 2: Try to create document record (will work when database is set up)
-      setCurrentUpload(prev => prev ? { ...prev, statusMessage: 'Tworzenie rekordu dokumentu...', progress: 60 } : null);
+      const fileName = `temp/${Date.now()}-${encodeURIComponent(file.name)}`;
+      console.log('Uploading to path:', fileName);
       
       try {
-        const { data: docData, error: docError } = await supabase
-          .from('documents')
-          .insert({
-            original_filename: file.name,
-            file_size: file.size,
-            mime_type: file.type,
-            storage_path: uploadData.path,
-          })
-          .select()
-          .single();
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('documents-temp')
+          .upload(fileName, file, {
+            cacheControl: '3600',
+            upsert: false
+          });
 
-        if (docError) {
-          console.log('Database not ready, using file-only mode:', docError.message);
-          // Continue without database record for now
+        if (uploadError) {
+          console.error('Storage upload error:', uploadError);
+          throw new Error(`Upload failed: ${uploadError.message}`);
         }
 
-        // Phase 3: Start processing simulation
+        console.log('Upload successful:', uploadData);
+        setCurrentUpload(prev => prev ? { ...prev, progress: 50, statusMessage: 'Plik przesłany pomyślnie!' } : null);
+
+        // Phase 2: Try to create document record (will work when database is set up)
+        setCurrentUpload(prev => prev ? { ...prev, statusMessage: 'Zapisywanie informacji o pliku...', progress: 70 } : null);
+        
+        let docData = null;
+        try {
+          const { data, error: docError } = await supabase
+            .from('documents')
+            .insert({
+              original_filename: file.name,
+              file_size: file.size,
+              mime_type: file.type,
+              storage_path: uploadData.path,
+            })
+            .select()
+            .single();
+
+          if (docError) {
+            console.log('Database not ready, proceeding without record:', docError.message);
+          } else {
+            docData = data;
+            console.log('Document record created:', data);
+          }
+        } catch (dbError) {
+          console.log('Database error (expected if not set up):', dbError);
+        }
+
+        // Phase 3: Complete successfully
         setCurrentUpload(prev => prev ? { 
           ...prev, 
           status: 'processing', 
-          statusMessage: 'Przygotowywanie do analizy...',
+          statusMessage: 'Finalizacja przesyłania...',
           documentId: docData?.id || 'file-' + Date.now(),
-          progress: 80
+          progress: 90
         } : null);
+
+        // Small delay to show the final step
+        await new Promise(resolve => setTimeout(resolve, 500));
 
         return { 
           id: docData?.id || 'file-' + Date.now(), 
           name: file.name,
-          storage_path: uploadData.path 
+          storage_path: uploadData.path,
+          uploaded: true
         };
       } catch (error) {
-        console.log('Database error, continuing with file upload only:', error);
-        
-        setCurrentUpload(prev => prev ? { 
-          ...prev, 
-          status: 'processing', 
-          statusMessage: 'Plik przesłany, oczekuje na konfigurację bazy danych...',
-          documentId: 'file-' + Date.now(),
-          progress: 80
-        } : null);
-
-        return { 
-          id: 'file-' + Date.now(), 
-          name: file.name,
-          storage_path: uploadData.path 
-        };
+        console.error('Upload process failed:', error);
+        throw error;
       }
     },
     onSuccess: (docData) => {
+      console.log('Upload completed successfully:', docData);
+      
       // Start monitoring processing progress
       monitorProcessing(docData.id);
       
       toast({
         title: "Plik przesłany pomyślnie!",
-        description: `${docData.name} został przesłany do systemu`,
+        description: `${docData.name} został bezpiecznie przesłany do systemu`,
       });
     },
     onError: (error: any) => {
-      console.error('Upload mutation error:', error);
+      console.error('Upload failed:', error);
       setCurrentUpload(prev => prev ? {
         ...prev,
         status: 'failure',
         statusMessage: 'Wystąpił błąd podczas przesyłania',
-        error: error.message
+        error: error.message || 'Nieznany błąd'
       } : null);
+      
+      toast({
+        title: "Błąd przesyłania",
+        description: error.message || 'Nie udało się przesłać pliku',
+        variant: "destructive",
+      });
     },
   });
 
