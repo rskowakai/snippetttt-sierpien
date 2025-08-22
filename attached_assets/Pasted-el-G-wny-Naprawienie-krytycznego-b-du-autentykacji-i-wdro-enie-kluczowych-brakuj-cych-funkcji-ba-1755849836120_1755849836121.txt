@@ -1,0 +1,25 @@
+el Główny: Naprawienie krytycznego błędu autentykacji i wdrożenie kluczowych, brakujących funkcji backendowych (szyfrowanie, AI), aby doprowadzić projekt do stanu zgodnego z pierwotną wizją bezpiecznej i inteligentnej platformy prawnej.
+Kontekst i Diagnoza:
+Dotychczasowe prace, choć ambitne, doprowadziły do niestabilnego stanu. Mamy rozbudowany schemat bazy danych, ale kluczowe komponenty są wadliwe lub nie istnieją.
+Krytyczny Problem: System autentykacji jest niefunkcjonalny. Pomimo istnienia komponentów UI, proces rejestracji i logowania kończy się niepowodzeniem z powodu błędów w triggerze bazodanowym (handle_new_user) odpowiedzialnym za tworzenie profili użytkowników.
+Brak Implementacji Logiki Biznesowej: Kluczowe funkcje Edge (document-processor do szyfrowania, ai-rag-handler do obsługi RAG) nie zostały zaimplementowane. Aplikacja nie posiada swojej podstawowej funkcjonalności.
+Niespójność Frontend-Backend: Komponenty UI zostały uproszczone, aby uniknąć błędów kompilacji, i nie są zintegrowane z docelową logiką backendową.
+Strategiczny Plan Działania (Proszę o realizację w podanej kolejności):
+Faza 1: Stabilizacja Fundamentu – Autentykacja (KRYTYCZNE)
+Celem jest stworzenie w 100% działającego procesu rejestracji i logowania.
+Weryfikacja i Poprawa Schematu: Upewnij się, że wszystkie wymagane typy ENUM (user_role, case_status, case_priority) istnieją w bazie danych.
+Naprawa Trigggera handle_new_user: Wdróż finalną, poprawną wersję funkcji handle_new_user i powiązanego z nią triggera on_auth_user_created. Funkcja musi poprawnie pobierać dane z NEW.id oraz NEW.raw_user_meta_data i tworzyć wpis w tabeli public.profiles.
+Pełna Integracja Komponentów Auth: Połącz komponenty UI (/auth/login, /auth/signup) z klientem supabase.auth. Zaimplementuj obsługę błędów (np. "użytkownik już istnieje", "nieprawidłowe hasło") i wyświetlaj je użytkownikowi. Upewnij się, że po udanej rejestracji/logowaniu użytkownik jest przekierowywany do głównego panelu aplikacji (/dashboard).
+Faza 2: Implementacja Logiki Backendowej – Edge Functions
+Teraz zaimplementujmy "mózg" aplikacji. Stwórz następujące funkcje Supabase Edge Functions w Deno/TypeScript:
+Stwórz Edge Function document-processor:
+Cel: Realizacja logiki szyfrowania kopertowego.
+Kroki: Funkcja jest wywoływana (np. przez trigger na tabeli processing_queue). Przyjmuje document_id. Pobiera jawny plik z public bucketa w Supabase Storage. Implementuje logikę KMS (może być symulowana wewnątrz funkcji z kluczem KEK pobranym z sekretów Supabase), aby wygenerować unikalny klucz DEK. Szyfruje plik algorytmem AES-256-GCM. Zapisuje zaszyfrowany plik w bezpiecznym, prywatnym bucketcie Storage. Zapisuje zaszyfrowany DEK, iv i auth_tag w tabeli document_encryption. Usuwa jawny plik. Aktualizuje status zadania w processing_queue na completed.
+Stwórz Edge Function ai-rag-handler:
+Cel: Implementacja logiki RAG dla asystenta AI.
+Kroki: Przyjmuje zapytanie (query) i case_id. Wykorzystuje wzorzec fabryki, aby wybrać dostawcę AI (OpenAI/Gemini) na podstawie sekretów. Generuje embedding dla query. Wywołuje funkcję bazodanową search_similar_documents, aby znaleźć relewantne fragmenty w tabeli vector_documents. Konstruuje prompt z kontekstem i zapytaniem. Wywołuje model LLM, aby uzyskać odpowiedź. Zapisuje historię rozmowy w tabelach ai_conversations i ai_messages.
+Faza 3: Pełna Integracja Frontend-Backend
+Połączmy teraz interfejs użytkownika z działającym backendem.
+Połącz DocumentUploader z Kolejką: Zmodyfikuj komponent. Po udanym uploadzie pliku do tymczasowego, publicznego bucketa, komponent musi wywołać funkcję bazodanową enqueue_document_processing, przekazując ID dokumentu i ścieżkę do pliku.
+Zaimplementuj AIAssistant: Przywróć pełną funkcjonalność komponentu. Zintegruj go z funkcją Edge ai-rag-handler, przesyłając zapytania i wyświetlając odpowiedzi.
+Wdróż Powiadomienia w Czasie Rzeczywistym: Użyj Supabase Realtime Subscriptions, aby nasłuchiwać zmian w tabeli processing_queue dla zalogowanego użytkownika. Kiedy status zadania powiązanego z dokumentem zmieni się na completed lub failed, wyświetl powiadomienie (np. toast) w UI.
