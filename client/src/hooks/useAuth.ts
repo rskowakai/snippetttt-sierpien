@@ -49,13 +49,20 @@ export function useAuth() {
         .eq('id', user.id)
         .single();
 
-      if (error && error.code !== 'PGRST116') {
+      if (error) {
+        // Handle cases where profiles table doesn't exist or no profile found
+        if (error.code === 'PGRST116' || error.code === '42P01') {
+          console.log('Profiles table not ready or profile not found, proceeding without profile');
+          setAuthState({ user, profile: null, loading: false });
+          return;
+        }
         throw error;
       }
 
       setAuthState({ user, profile, loading: false });
     } catch (error) {
       console.error('Error loading profile:', error);
+      // Always set loading to false so app doesn't get stuck
       setAuthState({ user, profile: null, loading: false });
     }
   };
