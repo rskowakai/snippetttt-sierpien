@@ -67,60 +67,37 @@ export function DocumentUploader() {
 
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
-      // Phase 1: Upload
-      setCurrentUpload(prev => prev ? { ...prev, status: 'uploading', statusMessage: 'Przesyłanie pliku...' } : null);
+      // Demo mode - simulate the full upload and processing flow
+      console.log('Starting demo upload for:', file.name);
       
-      const fileName = `temp/${Date.now()}-${file.name}`;
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('documents-temp')
-        .upload(fileName, file);
-
-      if (uploadError) throw uploadError;
-
-      // Phase 2: Create document record
-      setCurrentUpload(prev => prev ? { ...prev, statusMessage: 'Tworzenie rekordu dokumentu...' } : null);
+      // Phase 1: Upload simulation
+      setCurrentUpload(prev => prev ? { ...prev, status: 'uploading', statusMessage: 'Przesyłanie pliku...', progress: 20 } : null);
+      await new Promise(resolve => setTimeout(resolve, 1500));
       
-      const { data: docData, error: docError } = await supabase
-        .from('documents')
-        .insert({
-          original_filename: file.name,
-          filename: fileName,
-          file_size: file.size,
-          mime_type: file.type,
-          storage_path: uploadData.path,
-          document_type: getDocumentType(file.type),
-        })
-        .select()
-        .single();
-
-      if (docError) throw docError;
-
-      // Phase 3: Add to processing queue and start processing
+      // Phase 2: Record creation simulation
+      setCurrentUpload(prev => prev ? { ...prev, statusMessage: 'Tworzenie rekordu dokumentu...', progress: 40 } : null);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Phase 3: Start processing
       setCurrentUpload(prev => prev ? { 
         ...prev, 
         status: 'processing', 
         statusMessage: 'Weryfikacja pliku...',
-        documentId: docData.id,
-        progress: 10
+        documentId: 'demo-' + Date.now(),
+        progress: 60
       } : null);
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
-      const { error: queueError } = await supabase
-        .from('processing_queue')
-        .insert({
-          document_id: docData.id,
-          status: 'pending',
-          progress: 0,
-        });
-
-      if (queueError) throw queueError;
-
-      return docData;
+      return { id: 'demo-' + Date.now(), name: file.name };
     },
     onSuccess: (docData) => {
       // Start monitoring processing progress
       monitorProcessing(docData.id);
-      queryClient.invalidateQueries({ queryKey: ['processing-queue'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      
+      toast({
+        title: "Demo: Plik przesłany",
+        description: `${docData.name} został przesłany do analizy (tryb demonstracyjny)`,
+      });
     },
     onError: (error: any) => {
       setCurrentUpload(prev => prev ? {
