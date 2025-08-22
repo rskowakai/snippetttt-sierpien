@@ -72,12 +72,18 @@ export function DocumentUploader() {
       // Phase 1: Upload to storage with better error handling
       setCurrentUpload(prev => prev ? { ...prev, status: 'uploading', statusMessage: 'Przesyłanie pliku...', progress: 25 } : null);
       
-      const fileName = `temp/${Date.now()}-${encodeURIComponent(file.name)}`;
-      console.log('Uploading to path:', fileName);
+      // Get current user for folder structure
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('Nie jesteś zalogowany. Spróbuj odświeżyć stronę.');
+      }
+      
+      const fileName = `${user.id}/${Date.now()}-${encodeURIComponent(file.name)}`;
+      console.log('Uploading to path:', fileName, 'for user:', user.id);
       
       try {
-        // Test with shorter timeout and different options
-        const { data: uploadData, error: uploadError } = await Promise.race([
+        // Upload with timeout
+        const uploadResult = await Promise.race([
           supabase.storage
             .from('documents-temp')
             .upload(fileName, file, {
@@ -88,6 +94,8 @@ export function DocumentUploader() {
             setTimeout(() => reject(new Error('Upload timeout after 30 seconds')), 30000)
           )
         ]);
+
+        const { data: uploadData, error: uploadError } = uploadResult as any;
 
         if (uploadError) {
           console.error('Storage upload error:', uploadError);
