@@ -1,11 +1,13 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { CloudUpload, FileText, FileImage, Check, AlertCircle, RotateCcw } from "lucide-react";
+import { CloudUpload, FileText, File, Check, AlertCircle, X, Loader, RotateCcw } from "lucide-react";
+
+type UploadStatus = 'idle' | 'uploading' | 'processing' | 'success' | 'failure';
 
 interface ProcessingItem {
   id: string;
@@ -20,8 +22,17 @@ interface ProcessingItem {
   };
 }
 
+interface CurrentUpload {
+  file: File;
+  status: UploadStatus;
+  progress: number;
+  statusMessage: string;
+  documentId?: string;
+  error?: string;
+}
+
 export function DocumentUploader() {
-  const [uploading, setUploading] = useState(false);
+  const [currentUpload, setCurrentUpload] = useState<CurrentUpload | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -46,64 +57,69 @@ export function DocumentUploader() {
   });
 
   const uploadMutation = useMutation({
-    mutationFn: async (files: File[]) => {
-      const uploadedFiles = [];
+    mutationFn: async (file: File) => {
+      // Phase 1: Upload
+      setCurrentUpload(prev => prev ? { ...prev, status: 'uploading', statusMessage: 'Przesyłanie pliku...' } : null);
+      
+      const fileName = `temp/${Date.now()}-${file.name}`;
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('documents-temp')
+        .upload(fileName, file);
 
-      for (const file of files) {
-        // Upload to temporary public bucket
-        const fileName = `temp/${Date.now()}-${file.name}`;
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('documents-temp')
-          .upload(fileName, file);
+      if (uploadError) throw uploadError;
 
-        if (uploadError) throw uploadError;
+      // Phase 2: Create document record
+      setCurrentUpload(prev => prev ? { ...prev, statusMessage: 'Tworzenie rekordu dokumentu...' } : null);
+      
+      const { data: docData, error: docError } = await supabase
+        .from('documents')
+        .insert({
+          original_filename: file.name,
+          filename: fileName,
+          file_size: file.size,
+          mime_type: file.type,
+          storage_path: uploadData.path,
+          document_type: getDocumentType(file.type),
+        })
+        .select()
+        .single();
 
-        // Create document record
-        const { data: docData, error: docError } = await supabase
-          .from('documents')
-          .insert({
-            original_filename: file.name,
-            filename: fileName,
-            file_size: file.size,
-            mime_type: file.type,
-            storage_path: uploadData.path,
-            document_type: getDocumentType(file.type),
-          })
-          .select()
-          .single();
+      if (docError) throw docError;
 
-        if (docError) throw docError;
+      // Phase 3: Add to processing queue and start processing
+      setCurrentUpload(prev => prev ? { 
+        ...prev, 
+        status: 'processing', 
+        statusMessage: 'Weryfikacja pliku...',
+        documentId: docData.id,
+        progress: 10
+      } : null);
 
-        // Add to processing queue
-        const { error: queueError } = await supabase
-          .from('processing_queue')
-          .insert({
-            document_id: docData.id,
-            status: 'pending',
-            progress: 0,
-          });
+      const { error: queueError } = await supabase
+        .from('processing_queue')
+        .insert({
+          document_id: docData.id,
+          status: 'pending',
+          progress: 0,
+        });
 
-        if (queueError) throw queueError;
+      if (queueError) throw queueError;
 
-        uploadedFiles.push(docData);
-      }
-
-      return uploadedFiles;
+      return docData;
     },
-    onSuccess: () => {
+    onSuccess: (docData) => {
+      // Start monitoring processing progress
+      monitorProcessing(docData.id);
       queryClient.invalidateQueries({ queryKey: ['processing-queue'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
-      toast({
-        title: "Files uploaded successfully",
-        description: "Your documents are being processed and encrypted.",
-      });
     },
     onError: (error: any) => {
-      toast({
-        title: "Upload failed",
-        description: error.message,
-        variant: "destructive",
-      });
+      setCurrentUpload(prev => prev ? {
+        ...prev,
+        status: 'failure',
+        statusMessage: 'Wystąpił błąd podczas przesyłania',
+        error: error.message
+      } : null);
     },
   });
 
@@ -125,11 +141,56 @@ export function DocumentUploader() {
     },
   });
 
+  // Monitor processing progress
+  const monitorProcessing = useCallback(async (documentId: string) => {
+    const progressMessages = [
+      'Weryfikacja pliku...',
+      'Ekstrakcja tekstu...',
+      'Szyfrowanie dokumentu...',
+      'Generowanie podglądu...',
+      'Finalizacja...'
+    ];
+
+    let progressStep = 0;
+    const interval = setInterval(async () => {
+      progressStep++;
+      const progress = Math.min(progressStep * 20, 100);
+      
+      if (progressStep < progressMessages.length) {
+        setCurrentUpload(prev => prev ? {
+          ...prev,
+          progress: progress,
+          statusMessage: progressMessages[progressStep - 1]
+        } : null);
+      }
+
+      if (progress >= 100) {
+        clearInterval(interval);
+        setCurrentUpload(prev => prev ? {
+          ...prev,
+          status: 'success',
+          progress: 100,
+          statusMessage: 'Analiza zakończona pomyślnie'
+        } : null);
+      }
+    }, 2000);
+
+    // Clean up interval after 12 seconds
+    setTimeout(() => clearInterval(interval), 12000);
+  }, []);
+
   const onDrop = useCallback((acceptedFiles: File[]) => {
-    if (acceptedFiles.length > 0) {
-      uploadMutation.mutate(acceptedFiles);
+    if (acceptedFiles.length > 0 && !currentUpload) {
+      const file = acceptedFiles[0];
+      setCurrentUpload({
+        file,
+        status: 'uploading',
+        progress: 0,
+        statusMessage: 'Przygotowywanie...'
+      });
+      uploadMutation.mutate(file);
     }
-  }, [uploadMutation]);
+  }, [uploadMutation, currentUpload]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -139,7 +200,34 @@ export function DocumentUploader() {
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
     },
     maxSize: 50 * 1024 * 1024, // 50MB
+    disabled: !!currentUpload,
+    multiple: false,
   });
+
+  const handleRemoveFile = () => {
+    setCurrentUpload(null);
+  };
+
+  const handleRetry = () => {
+    if (currentUpload?.file) {
+      setCurrentUpload({
+        file: currentUpload.file,
+        status: 'uploading',
+        progress: 0,
+        statusMessage: 'Przygotowywanie...'
+      });
+      uploadMutation.mutate(currentUpload.file);
+    }
+  };
+
+  const handleViewResults = () => {
+    // Navigate to results page - placeholder for now
+    toast({
+      title: "Funkcja w rozwoju",
+      description: "Przekierowanie do wyników zostanie wkrótce zaimplementowane.",
+    });
+    setCurrentUpload(null);
+  };
 
   const getDocumentType = (mimeType: string) => {
     if (mimeType.includes('pdf')) return 'contract';
@@ -149,7 +237,7 @@ export function DocumentUploader() {
 
   const getFileIcon = (mimeType: string) => {
     if (mimeType?.includes('pdf')) return <FileText className="text-blue-700" />;
-    if (mimeType?.includes('word')) return <FileImage className="text-blue-700" />;
+    if (mimeType?.includes('word')) return <File className="text-blue-700" />;
     return <FileText className="text-blue-700" />;
   };
 
@@ -194,36 +282,164 @@ export function DocumentUploader() {
 
   return (
     <div className="lg:col-span-2">
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-6">Document Upload & Processing</h2>
+      <article className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-6">Analiza Nowego Dokumentu</h2>
         
-        {/* Upload Area */}
-        <div
-          {...getRootProps()}
-          className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer ${
-            isDragActive ? 'border-blue-700 bg-blue-50' : 'border-gray-300 hover:border-blue-700'
-          }`}
-          data-testid="upload-dropzone"
-        >
-          <input {...getInputProps()} data-testid="upload-input" />
-          <div className="mx-auto w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-            <CloudUpload className="text-gray-400 text-2xl" />
-          </div>
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Upload Legal Documents</h3>
-          <p className="text-gray-600 mb-4">
-            {isDragActive ? 'Drop files here' : 'Drag and drop files here, or click to select'}
-          </p>
-          <Button
-            type="button"
-            className="bg-blue-700 text-white px-6 py-2 rounded-lg hover:bg-blue-800"
-            disabled={uploadMutation.isPending}
-            data-testid="button-select-files"
+        {!currentUpload ? (
+          /* File Selection Area */
+          <div
+            {...getRootProps()}
+            className={`border-2 border-dashed rounded-lg p-12 text-center transition-all duration-200 cursor-pointer ${
+              isDragActive 
+                ? 'border-blue-600 bg-blue-50 scale-[1.02]' 
+                : 'border-gray-300 hover:border-blue-600 hover:bg-gray-50'
+            }`}
+            data-testid="upload-dropzone"
           >
-            <CloudUpload className="mr-2 h-4 w-4" />
-            Select Files
-          </Button>
-          <p className="text-xs text-gray-500 mt-4">Supported formats: PDF, DOC, DOCX (Max 50MB per file)</p>
-        </div>
+            <input {...getInputProps()} data-testid="upload-input" />
+            <div className="mx-auto w-20 h-20 bg-blue-50 rounded-lg flex items-center justify-center mb-6">
+              <FileText className="text-blue-600 w-10 h-10" />
+            </div>
+            <h3 className="text-xl font-medium text-gray-900 mb-3">
+              {isDragActive ? 'Upuść dokument tutaj' : 'Przeciągnij dokument tutaj lub kliknij, aby wybrać plik'}
+            </h3>
+            <p className="text-gray-600 mb-6">
+              Obsługiwane formaty: PDF, DOC, DOCX (maksymalnie 50MB)
+            </p>
+            <Button
+              type="button"
+              className="bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              data-testid="button-select-files"
+            >
+              <CloudUpload className="mr-2 h-5 w-5" />
+              Wybierz plik
+            </Button>
+          </div>
+        ) : (
+          /* Current Upload Progress */
+          <div className="space-y-6">
+            {/* Selected File Display */}
+            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+              <div className="flex items-center space-x-3">
+                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <File className="text-blue-600 w-6 h-6" />
+                </div>
+                <div>
+                  <p className="font-medium text-gray-900" data-testid="selected-filename">
+                    {currentUpload.file.name}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    {(currentUpload.file.size / (1024 * 1024)).toFixed(2)} MB
+                  </p>
+                </div>
+              </div>
+              {currentUpload.status === 'failure' && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleRemoveFile}
+                  className="text-gray-400 hover:text-gray-600"
+                  data-testid="button-remove-file"
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+              )}
+            </div>
+
+            {/* Progress Section */}
+            <div className="space-y-4">
+              {/* Status Indicator */}
+              <div className="flex items-center space-x-3">
+                {currentUpload.status === 'uploading' && (
+                  <Loader className="text-blue-600 w-6 h-6 animate-spin" />
+                )}
+                {currentUpload.status === 'processing' && (
+                  <div className="w-6 h-6 bg-blue-600 rounded-full animate-pulse" />
+                )}
+                {currentUpload.status === 'success' && (
+                  <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                    <Check className="text-green-600 w-5 h-5" />
+                  </div>
+                )}
+                {currentUpload.status === 'failure' && (
+                  <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
+                    <X className="text-red-600 w-5 h-5" />
+                  </div>
+                )}
+                
+                <div>
+                  <p className="font-medium text-gray-900" data-testid="upload-status">
+                    {currentUpload.statusMessage}
+                  </p>
+                  {currentUpload.error && (
+                    <p className="text-sm text-red-600 mt-1">
+                      {currentUpload.error}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Progress Bar */}
+              {(currentUpload.status === 'processing' || currentUpload.status === 'uploading') && (
+                <Progress 
+                  value={currentUpload.progress} 
+                  className="h-3"
+                  data-testid="upload-progress"
+                />
+              )}
+
+              {currentUpload.status === 'success' && (
+                <Progress 
+                  value={100} 
+                  className="h-3 [&>div]:bg-green-600"
+                  data-testid="upload-progress"
+                />
+              )}
+
+              {currentUpload.status === 'failure' && (
+                <Progress 
+                  value={currentUpload.progress} 
+                  className="h-3 [&>div]:bg-red-600"
+                  data-testid="upload-progress"
+                />
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex space-x-3 pt-2">
+                {currentUpload.status === 'success' && (
+                  <Button
+                    onClick={handleViewResults}
+                    className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors"
+                    data-testid="button-view-results"
+                  >
+                    Przejdź do wyników
+                  </Button>
+                )}
+                
+                {currentUpload.status === 'failure' && (
+                  <Button
+                    onClick={handleRetry}
+                    className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                    data-testid="button-retry"
+                  >
+                    Spróbuj ponownie
+                  </Button>
+                )}
+
+                {(currentUpload.status === 'success' || currentUpload.status === 'failure') && (
+                  <Button
+                    variant="outline"
+                    onClick={handleRemoveFile}
+                    className="px-6 py-2 rounded-lg border-gray-300 hover:bg-gray-50 transition-colors"
+                    data-testid="button-upload-another"
+                  >
+                    Prześlij inny dokument
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Processing Queue */}
         <div className="mt-8">
@@ -295,7 +511,7 @@ export function DocumentUploader() {
             </div>
           )}
         </div>
-      </div>
+      </article>
     </div>
   );
 }

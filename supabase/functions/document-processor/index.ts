@@ -118,7 +118,7 @@ serve(async (req) => {
     // Store encrypted file in secure storage
     const secureFilename = `encrypted/${document_id}-${Date.now()}.enc`;
     const { error: uploadError } = await supabase.storage
-      .from('documents-secure')
+      .from('documents-encrypted')
       .upload(secureFilename, ciphertext);
 
     if (uploadError) throw uploadError;
@@ -129,28 +129,22 @@ serve(async (req) => {
       .update({ progress: 85 })
       .eq('document_id', document_id);
 
-    // Store encryption metadata
+    // Store encryption metadata in the documents table
     const encryptedDEKArray = new Uint8Array(encryptedDEK);
     const encryptedDEKWithIv = new Uint8Array(12 + encryptedDEKArray.length);
     encryptedDEKWithIv.set(kekIv);
     encryptedDEKWithIv.set(encryptedDEKArray, 12);
 
-    await supabase
-      .from('document_encryption')
-      .insert({
-        document_id: document_id,
-        encrypted_dek: btoa(String.fromCharCode(...encryptedDEKWithIv)),
-        iv: btoa(String.fromCharCode(...iv)),
-        auth_tag: btoa(String.fromCharCode(...authTag)),
-        encryption_algorithm: 'AES-256-GCM'
-      });
+    const encryptionKeyId = btoa(String.fromCharCode(...encryptedDEKWithIv)) + '|' + 
+                           btoa(String.fromCharCode(...iv)) + '|' + 
+                           btoa(String.fromCharCode(...authTag));
 
     // Update document record
     await supabase
       .from('documents')
       .update({
-        is_encrypted: true,
-        storage_path: secureFilename
+        encrypted_storage_path: secureFilename,
+        encryption_key_id: encryptionKeyId
       })
       .eq('id', document_id);
 

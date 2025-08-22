@@ -1,0 +1,157 @@
+Cel: Stworzenie interfejsu do przesyłania i śledzenia analizy dokumentu, który będzie intuicyjny, profesjonalny i godny zaufania dla prawnika.
+Filozofia promptu: v0.dev jest narzędziem wizualnym. Zamiast opisywać logikę biznesową, opisujemy stany, wygląd i odczucia (look & feel) komponentu. Podejście TDD jest tu odzwierciedlone przez precyzyjne zdefiniowanie wszystkich możliwych stanów interfejsu (ładowanie, sukces, błąd), co jest fundamentem pod testowanie komponentów.
+code
+Prompt
+## Komponent dla PrawoAsystent AI: Asynchroniczny Upload i Śledzenie Analizy Dokumentu
+
+**Kontekst:** Tworzymy kluczowy komponent dla **PrawoAsystent AI**, platformy SaaS klasy enterprise dla kancelarii prawnych. Estetyka musi być absolutnie profesjonalna, minimalistyczna, przejrzysta i budząca zaufanie. Używamy **React, Next.js i Tailwind CSS**.
+
+**Zadanie:** Zaprojektuj i wygeneruj komponent React/TypeScript, który pozwala użytkownikowi (prawnikowi) na przesłanie jednego dokumentu i śledzenie postępu jego analizy w czasie rzeczywistym.
+
+**Szczegółowa specyfikacja komponentu:**
+
+1.  **Główny kontener:** Karta (`<article>`) z wyraźnym tytułem, np. "Analiza Nowego Dokumentu". Całość otoczona subtelnym cieniem i zaokrąglonymi rogami, aby nadać wrażenie solidności.
+
+2.  **Element do wyboru pliku:**
+    *   Duży, wyraźny obszar "przeciągnij i upuść" (drag-and-drop) z ikoną dokumentu i tekstem "Przeciągnij dokument tutaj lub kliknij, aby wybrać plik".
+    *   Po wybraniu pliku, obszar ten powinien wyświetlać nazwę wybranego pliku (np. `Umowa_o_poufności_final.pdf`) wraz z ikoną pozwalającą na jego usunięcie.
+
+3.  **Przycisk akcji:**
+    *   Przycisk "Prześlij do analizy". Musi być nieaktywny (`disabled`), dopóki plik nie zostanie wybrany.
+    *   Kolorystyka: stonowany, profesjonalny niebieski.
+
+4.  **Sekcja Śledzenia Postępu (dynamiczna, widoczna po przesłaniu):**
+    To jest kluczowa część. Musi obsługiwać następujące stany, odzwierciedlając podejście **Test-Driven Development**:
+    *   **Stan `UPLOADING` (Przesyłanie):**
+        *   Wyświetla animowany spinner lub pulsującą kropkę.
+        *   Tekst statusu: "Przesyłanie pliku..."
+        *   Przycisk przesyłania jest nieaktywny.
+    *   **Stan `PROCESSING` (Przetwarzanie):**
+        *   Wyświetla **pasek postępu (progress bar)**, który dynamicznie się wypełnia.
+        *   Pod paskiem postępu wyświetlany jest **tekst statusu**, który również się zmienia, np. "Weryfikacja pliku...", "Ekstrakcja tekstu...", "Generowanie podsumowania AI...".
+    *   **Stan `SUCCESS` (Sukces):**
+        *   Pasek postępu jest w 100% wypełniony, w kolorze profesjonalnej zieleni.
+        *   Wyświetlana jest duża ikona zielonego "ptaszka" (checkmark).
+        *   Tekst statusu: "Analiza zakończona pomyślnie."
+        *   Pojawia się przycisk "Przejdź do wyników", który przekieruje użytkownika do nowej strony.
+    *   **Stan `FAILURE` (Błąd):**
+        *   Pasek postępu zmienia kolor na ostrzegawczą czerwień.
+        *   Wyświetlana jest ikona czerwonego "krzyżyka" (X).
+        *   Tekst statusu: "Wystąpił błąd podczas analizy."
+        *   Poniżej wyświetlany jest **przejrzysty, ale technicznie zwięzły komunikat o błędzie** (np. "Plik jest uszkodzony lub chroniony hasłem.").
+
+**Zasady Prawne i UX:**
+*   **Poufność:** Komponent nie może wyświetlać żadnych fragmentów treści dokumentu.
+*   **Przejrzystość:** Użytkownik musi w każdej chwili wiedzieć, co dzieje się z jego dokumentem.
+*   **Minimalizm:** Unikaj zbędnych animacji i kolorów. Interfejs ma być narzędziem, a nie zabawką. Paleta barw: odcienie szarości, biel, akcenty niebieskiego, zieleni i czerwieni tylko dla statusów.
+2. Prompt dla bolt.new (Generowanie Logiki Backendowej i Testów)
+Cel: Stworzenie endpointu API i logiki CRUD zgodnie z zasadami TDD. Bolt.new jest idealny do generowania logiki i plików testowych.
+Filozofia promptu: Stosujemy podejście "test-first". Najpierw precyzyjnie definiujemy, co chcemy przetestować, a następnie prosimy o implementację kodu, który sprawi, że te testy przejdą. To jest kwintesencja TDD w praktyce.
+code
+Prompt
+## Zadanie dla PrawoAsystent AI: Implementacja Endpointu Listującego Dokumenty z TDD
+
+**Kontekst:** Rozwijamy backend dla aplikacji prawniczej PrawoAsystent AI. Używamy **FastAPI**, **SQLModel** (jako ORM), **Alembic** do migracji oraz **Pytest** do testowania. Mamy już działające uwierzytelnianie oparte na JWT.
+
+**Cel:** Stworzyć nowy endpoint `GET /api/documents`, który zwraca listę dokumentów dla zalogowanego użytkownika, wraz z paginacją. Całość zaimplementowana w podejściu **Test-Driven Development (TDD)**.
+
+**Krok 1: Wygeneruj plik testowy (`test_documents.py`)**
+
+Proszę, wygeneruj najpierw kompletny plik testowy `backend/app/tests/test_documents.py`. Musi on zawierać testy dla następujących scenariuszy:
+
+1.  `test_get_documents_success`:
+    *   Tworzy dwóch różnych użytkowników.
+    *   Tworzy trzy dokumenty dla użytkownika A i dwa dla użytkownika B.
+    *   Loguje się jako użytkownik A.
+    *   Wysyła zapytanie `GET /api/documents`.
+    *   Sprawdza, czy status odpowiedzi to 200.
+    *   Sprawdza, czy odpowiedź zawiera **dokładnie 3 dokumenty** i czy wszystkie należą do użytkownika A.
+
+2.  `test_get_documents_unauthenticated`:
+    *   Wysyła zapytanie `GET /api/documents` bez nagłówka autoryzacyjnego.
+    *   Sprawdza, czy status odpowiedzi to 401 (Unauthorized).
+
+3.  `test_get_documents_pagination`:
+    *   Tworzy 15 dokumentów dla jednego użytkownika.
+    *   Loguje się jako ten użytkownik.
+    *   Wysyła zapytanie `GET /api/documents?skip=5&limit=5`.
+    *   Sprawdza, czy status odpowiedzi to 200.
+    *   Sprawdza, czy odpowiedź zawiera **dokładnie 5 dokumentów**.
+    *   Sprawdza, czy ID pierwszego dokumentu w odpowiedzi jest zgodne z szóstym utworzonym dokumentem.
+
+**Krok 2: Zaimplementuj kod, aby testy przeszły**
+
+Teraz wygeneruj kod produkcyjny, który sprawi, że powyższe testy zakończą się sukcesem.
+
+1.  **CRUD (`backend/app/modules/documents/crud.py`):**
+    *   Stwórz funkcję `get_user_documents(db: Session, user_id: int, skip: int = 0, limit: int = 100) -> List[Document]`.
+    *   Funkcja musi pobierać dokumenty z bazy danych, filtrując je po `owner_id` i stosując paginację (`offset` i `limit`).
+
+2.  **Router (`backend/app/modules/documents/router.py`):**
+    *   Stwórz nowy endpoint `GET /` (prefix ścieżki to `/api/documents`).
+    *   Zabezpiecz go za pomocą zależności `get_current_active_user`.
+    *   Endpoint powinien przyjmować parametry zapytania `skip: int = 0` i `limit: int = 100`.
+    *   Wywołaj funkcję `crud.get_user_documents` z odpowiednimi parametrami.
+    *   Zdefiniuj `response_model=List[schemas.DocumentRead]`.
+
+**Informacje dodatkowe:**
+*   Model `Document` zawiera pole `owner_id`.
+*   Zależność `get_current_active_user` zwraca obiekt zalogowanego użytkownika.
+*   Użyj `TestClient` z FastAPI do pisania testów. Pamiętaj o setupie testowej bazy danych (może być in-memory SQLite).
+3. Prompt dla lovable.dev (Generowanie Kompletnego Szkieletu Aplikacji)
+Cel: Wygenerowanie kompletnego, ale spójnego szkieletu całego projektu, który od razu będzie zawierał dobre praktyki i strukturę gotową do dalszego rozwoju.
+Filozofia promptu: Lovable.dev działa na najwyższym poziomie abstrakcji. Traktujemy go jak architekta oprogramowania. Dajemy mu kompletny opis projektu, jego cele, stos technologiczny i, co najważniejsze, zasady i metodologie, według których ma tworzyć kod.
+code
+Prompt
+## Generowanie Pełnego Szkieletu Aplikacji: PrawoAsystent AI
+
+**Wizja Projektu:**
+Wygeneruj kompletny, full-stackowy szkielet aplikacji SaaS o nazwie **PrawoAsystent AI**. Jest to zaawansowana platforma dla kancelarii prawnych, służąca do bezpiecznego przechowywania, analizowania i zadawania pytań do dokumentów prawnych przy użyciu AI.
+
+**Kluczowa Metodologia: Test-Driven Development (TDD)**
+Cały wygenerowany backend musi być zgodny z zasadami TDD. Dla każdego endpointu API wygeneruj odpowiadający mu plik testowy w `pytest`, który sprawdza kluczowe scenariusze (sukces, błędy autoryzacji, walidacji danych).
+
+**Architektura i Stos Technologiczny:**
+
+1.  **Backend:**
+    *   **Framework:** Python 3.11 z **FastAPI**.
+    *   **Baza Danych:** **PostgreSQL**.
+    *   **ORM:** **SQLAlchemy 2.0** z modelami zdefiniowanymi w `app/models`.
+    *   **Migracje:** Skonfiguruj **Alembic** do zarządzania schematem bazy.
+    *   **Zadania w Tle:** **Celery** z **Redis** jako brokerem.
+    *   **Uwierzytelnianie:** Oparte na **JWT** (tokeny dostępu i odświeżania).
+    *   **Struktura:** Modułowa (np. `app/modules/auth`, `app/modules/documents`).
+
+2.  **Frontend:**
+    *   **Framework:** **Next.js 14** z **App Router**.
+    *   **Język:** **TypeScript**.
+    *   **Stylowanie:** **Tailwind CSS**.
+    *   **UI:** Profesjonalny, minimalistyczny, godny zaufania. Skup się na użyteczności i przejrzystości, unikaj zbędnych ozdobników.
+
+3.  **Konteneryzacja:**
+    *   Wygeneruj kompletny plik `docker-compose.yml`, który uruchomi wszystkie usługi: `backend`, `frontend`, `worker`, `db` (PostgreSQL), `redis`.
+    *   Dołącz odpowiednie pliki `Dockerfile` dla backendu i frontendu.
+
+**Podstawowe Funkcjonalności (MVP) do Wygenerowania:**
+
+1.  **Moduł Uwierzytelniania (Auth):**
+    *   Endpointy: `POST /api/auth/register`, `POST /api/auth/token`.
+    *   Modele: `User` (z polami email, hashed_password, role).
+    *   Testy: `test_auth.py` sprawdzający rejestrację i logowanie.
+
+2.  **Moduł Zarządzania Dokumentami (Documents):**
+    *   **Asynchroniczny Upload:** Endpoint `POST /api/documents/upload`, który przyjmuje plik, zapisuje go (na razie lokalnie), tworzy wpis w bazie `Document` (ze statusem `uploaded`) i wysyła zadanie do Celery. Endpoint powinien natychmiast zwrócić ID zadania.
+    *   **Zadanie w Tle:** Task Celery `process_document`, który (na razie jako placeholder) symuluje pracę przez 10 sekund i zmienia status dokumentu na `processed`.
+    *   **Listowanie Dokumentów:** Endpoint `GET /api/documents` z paginacją, który zwraca listę dokumentów tylko dla zalogowanego użytkownika.
+    *   **Modele:** `Document` (z polami `filename`, `status`, `owner_id`), `Task` (z polami `celery_task_id`, `status`).
+    *   **Testy:** `test_documents.py` dla endpointu listującego i sprawdzający, czy upload tworzy zadanie.
+
+3.  **Frontend (Podstawowe Widoki):**
+    *   Strona logowania i rejestracji.
+    *   Chroniony panel (`/dashboard`), gdzie zalogowany użytkownik będzie widział listę swoich dokumentów.
+    *   Prosty formularz do przesyłania plików, który po wysłaniu pokazuje status zadania.
+
+**Zasady Prawne i Profesjonalizm:**
+*   **Bezpieczeństwo:** Implementacja hashowania haseł (bcrypt), ochrona endpointów za pomocą zależności sprawdzających token JWT.
+*   **Izolacja Danych:** Logika biznesowa musi rygorystycznie zapewniać, że użytkownik ma dostęp tylko i wyłącznie do swoich własnych zasobów (dokumentów, zadań).
+*   **Przejrzystość Kodu:** Wygeneruj kod, który jest dobrze skomentowany, podzielony na logiczne moduły i zgodny z PEP 8.

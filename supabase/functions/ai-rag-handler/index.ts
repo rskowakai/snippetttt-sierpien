@@ -70,7 +70,7 @@ serve(async (req) => {
 
     // Search for similar documents using vector similarity
     // Note: This is a simplified version. In production, you'd use pgvector or similar
-    const { data: relevantChunks, error: searchError } = await supabase
+    let { data: relevantChunks, error: searchError } = await supabase
       .rpc('search_similar_documents', {
         query_embedding: queryEmbedding,
         similarity_threshold: 0.7,
@@ -81,12 +81,15 @@ serve(async (req) => {
       console.log('Vector search failed, using fallback text search');
       // Fallback to simple text search
       const { data: fallbackChunks } = await supabase
-        .from('vector_documents')
-        .select('chunk_content')
-        .textSearch('chunk_content', query)
+        .from('documents')
+        .select('original_filename, id')
+        .or(`original_filename.ilike.%${query}%`)
         .limit(5);
       
-      relevantChunks = fallbackChunks || [];
+      relevantChunks = fallbackChunks?.map(doc => ({ 
+        chunk_content: `Document: ${doc.original_filename}`,
+        content: `Document: ${doc.original_filename}`
+      })) || [];
     }
 
     // Construct context from relevant chunks
