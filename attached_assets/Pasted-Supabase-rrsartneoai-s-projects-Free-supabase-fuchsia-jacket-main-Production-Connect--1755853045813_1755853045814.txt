@@ -1,0 +1,267 @@
+Supabase
+rrsartneoai's projects
+Free
+
+supabase-fuchsia-jacket
+
+main
+Production
+
+
+Connect
+Feedback
+
+
+
+
+
+rrsartneoai
+
+SQL Editor
+Search queries
+Search queries...
+
+
+
+Shared
+
+Favorites
+
+PRIVATE (4)
+
+Community
+
+View running queries
+
+
+Legal Case Management System Setup
+
+Document Upload Storage Schema
+
+Temporary Documents Bucket Access Policies
+
+123456789101112131415
+-- Allow uploads to documents-temp bucket
+CREATE POLICY IF NOT EXISTS "Allow uploads to temp bucket" ON storage.objects
+    FOR INSERT WITH CHECK (bucket_id = 'documents-temp');
+
+-- Allow reading from documents-temp bucket
+CREATE POLICY IF NOT EXISTS "Allow reading temp files" ON storage.objects
+    FOR SELECT USING (bucket_id = 'documents-temp');
+
+-- Allow updates to documents-temp bucket
+CREATE POLICY IF NOT EXISTS "Allow updates to temp files" ON storage.objects
+
+
+Results
+
+Chart
+
+Export
+
+
+
+Source
+
+Primary database
+
+Role
+postgres
+
+Run
+CTRL
+
+ERROR:  42601: syntax error at or near "NOT"
+LINE 2: CREATE POLICY IF NOT EXISTS "Allow uploads to temp bucket" ON storage.objects
+                         ^
+
+
+Debug with Assistant
+
+0 row
+
+
+Storage RLS Policies
+
+
+
+rrsartneoai
+help
+
+-- Allow uploads to documents-temp bucket ...
+
+I'll rename the chat and then help you with the SQL snippet.
+
+There are a few issues with the SQL snippet:
+
+PostgreSQL does not support CREATE POLICY IF NOT EXISTS. You'll need to use separate ALTER TABLE statements to add policies.
+
+These policies lack authentication restrictions. Currently, these policies would allow ANY authenticated or anonymous user to perform these actions on the documents-temp bucket.
+
+Here's a corrected and improved version:
+
+SQL Query
+
+
+
+-- Ensure RLS is enabled on storage.objects
+ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+
+-- Allow uploads to documents-temp bucket only for authenticated users
+CREATE POLICY "Allow uploads to temp bucket" ON storage.objects
+    FOR INSERT TO authenticated
+    WITH CHECK (
+        bucket_id = 'documents-temp' 
+        AND auth.uid() IS NOT NULL
+    );
+
+-- Allow reading from documents-temp bucket only for authenticated users
+CREATE POLICY "Allow reading temp files" ON storage.objects
+    FOR SELECT TO authenticated
+    USING (
+        bucket_id = 'documents-temp'
+        AND auth.uid() IS NOT NULL
+    );
+
+-- Allow updates to documents-temp bucket only for authenticated users
+CREATE POLICY "Allow updates to temp files" ON storage.objects
+    FOR UPDATE TO authenticated
+    USING (
+        bucket_id = 'documents-temp'
+        AND auth.uid() IS NOT NULL
+    )
+    WITH CHECK (
+        bucket_id = 'documents-temp'
+        AND auth.uid() IS NOT NULL
+    );
+
+-- Allow deletes from documents-temp bucket only for authenticated users
+CREATE POLICY "Allow deletes from temp files" ON storage.objects
+    FOR DELETE TO authenticated
+    USING (
+        bucket_id = 'documents-temp'
+        AND auth.uid() IS NOT NULL
+    );
+
+Key improvements:
+
+Added TO authenticated to restrict policies to logged-in users
+Added auth.uid() IS NOT NULL to ensure only authenticated users can access
+Added WITH CHECK clause for INSERT and UPDATE to validate new/updated rows
+Ensure RLS is enabled on the storage.objects table
+Recommendations:
+
+If you want more granular access (e.g., only allowing users to access their own files), modify the policies to include additional conditions.
+Consider adding logic to restrict file operations based on user ownership or other criteria.
+Would you like me to elaborate on any part of these policies?
+
+rrsartneoai
+yes want more granular access (e.g., only allowing users to access their own files), modify the policies to include additional conditions.
+
+
+I'll provide a more granular set of RLS policies for the documents-temp bucket that ensures users can only interact with their own files.
+
+SQL Query
+
+
+
+This query contains write operations. Are you sure you want to execute it?
+
+Make sure you are not accidentally removing something important.
+
+
+Cancel
+
+Run
+-- Ensure RLS is enabled on storage.objects
+ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+
+-- Allow uploads to documents-temp bucket only for authenticated users
+-- Ensure the uploaded file path includes the user's ID
+CREATE POLICY "Allow uploads to temp bucket" ON storage.objects
+    FOR INSERT TO authenticated
+    WITH CHECK (
+        bucket_id = 'documents-temp' 
+        AND (storage.foldername(name))[1] = (SELECT auth.uid())::text
+    );
+
+-- Allow reading from documents-temp bucket only for authenticated users
+-- Users can only read files in their own folder
+CREATE POLICY "Allow reading temp files" ON storage.objects
+    FOR SELECT TO authenticated
+    USING (
+        bucket_id = 'documents-temp'
+        AND (storage.foldername(name))[1] = (SELECT auth.uid())::text
+    );
+
+-- Allow updates to documents-temp bucket only for authenticated users
+-- Users can only update files in their own folder
+CREATE POLICY "Allow updates to temp files" ON storage.objects
+    FOR UPDATE TO authenticated
+    USING (
+        bucket_id = 'documents-temp'
+        AND (storage.foldername(name))[1] = (SELECT auth.uid())::text
+    )
+    WITH CHECK (
+        bucket_id = 'documents-temp'
+        AND (storage.foldername(name))[1] = (SELECT auth.uid())::text
+    );
+
+-- Allow deletes from documents-temp bucket only for authenticated users
+-- Users can only delete files in their own folder
+CREATE POLICY "Allow deletes from temp files" ON storage.objects
+    FOR DELETE TO authenticated
+    USING (
+        bucket_id = 'documents-temp'
+        AND (storage.foldername(name))[1] = (SELECT auth.uid())::text
+    );
+
+Key improvements:
+
+(storage.foldername(name))[1] extracts the first folder name from the file path
+Compares the first folder name to the current user's UUID
+This means users can ONLY interact with files in a folder named after their user ID
+Example file structure:
+
+documents-temp/[user-uuid-1]/file1.txt
+documents-temp/[user-uuid-1]/file2.pdf
+documents-temp/[user-uuid-2]/file1.txt
+A user with UUID "123" can:
+
+Upload files ONLY to documents-temp/123/
+Read files ONLY from documents-temp/123/
+Update files ONLY in documents-temp/123/
+Delete files ONLY from documents-temp/123/
+When uploading files via Supabase Storage, you'll need to ensure the file path includes the user's UUID. Here's an example in JavaScript:
+
+const
+ userId = user.id;
+const
+ file = event.target.files[
+0
+];
+const
+ { data, error } = 
+await
+ supabase.storage
+  .from(
+'documents-temp'
+)
+  .upload(
+`
+${userId}
+/
+${file.name}
+`
+, file);
+
+This approach provides:
+
+Strict user isolation
+Prevents users from accessing each other's temporary documents
+Ensures each user can only manage their own files
+Would you like me to explain any part of these policies in more detail?
+
+Ask a follow up question...
+
+supabase-fuchsia-jacket | rrsartneoai's projects | Supabase

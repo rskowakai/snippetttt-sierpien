@@ -5,18 +5,36 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/lib/supabase";
 import Dashboard from "@/pages/Dashboard";
 import NotFound from "@/pages/not-found";
 
 function Router() {
   const { user, signIn, signUp, loading } = useAuth();
 
-  // For now, let's bypass the loading state and show the interface immediately
-  // This allows testing the document uploader while the database is being set up
   console.log('Auth state:', { user: !!user, loading });
 
-  // Skip authentication for now to show the interface
-  if (true) {
+  // Create anonymous user if no auth yet (for testing uploads)
+  const createAnonymousUser = async () => {
+    try {
+      const { data, error } = await supabase.auth.signInAnonymously();
+      if (error) {
+        console.error('Anonymous auth failed:', error);
+      } else {
+        console.log('Anonymous user created:', data.user?.id);
+      }
+    } catch (error) {
+      console.error('Failed to create anonymous user:', error);
+    }
+  };
+
+  // Auto-create anonymous user if not authenticated
+  if (!user && !loading) {
+    createAnonymousUser();
+  }
+
+  // Show interface once we have any user (anonymous or real)
+  if (user) {
     return (
       <Switch>
         <Route path="/" component={Dashboard} />
