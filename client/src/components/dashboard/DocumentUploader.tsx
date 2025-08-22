@@ -76,12 +76,18 @@ export function DocumentUploader() {
       console.log('Uploading to path:', fileName);
       
       try {
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('documents-temp')
-          .upload(fileName, file, {
-            cacheControl: '3600',
-            upsert: false
-          });
+        // Test with shorter timeout and different options
+        const { data: uploadData, error: uploadError } = await Promise.race([
+          supabase.storage
+            .from('documents-temp')
+            .upload(fileName, file, {
+              cacheControl: '3600',
+              upsert: false
+            }),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Upload timeout after 30 seconds')), 30000)
+          )
+        ]);
 
         if (uploadError) {
           console.error('Storage upload error:', uploadError);
