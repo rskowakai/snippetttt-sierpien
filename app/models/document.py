@@ -31,7 +31,7 @@ class Document(BaseModel):
     summary = Column(Text)
     key_topics = Column(ARRAY(String))
     legal_entities = Column(JSONB)  # Extracted legal entities
-    metadata = Column(JSONB, default={})
+    document_metadata = Column(JSONB, default={})
 
     # AI processing
     chunk_count = Column(Integer, default=0)

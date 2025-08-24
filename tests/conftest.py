@@ -2,63 +2,59 @@ import pytest
 import asyncio
 from unittest.mock import Mock, patch, AsyncMock
 
-from httpx import AsyncClient
+from httpx import AsyncClient, ASGITransport
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from testcontainers.postgres import PostgresContainer
-from testcontainers.redis import RedisContainer
 
 from app.main import app
 from app.models import Base, User
-from app.db.session import get_db
+from app.db.session import get_db, engine
 from app.services.security_service import get_password_hash, create_access_token
 
 # Test configuration
 @pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.get_event_loop()
-    yield loop
-    loop.close()
-
-@pytest.fixture(scope="session")
-def postgres_container():
-    with PostgresContainer("postgres:14") as postgres:
-        yield postgres
-
-@pytest.fixture(scope="session")
-def redis_container():
-    with RedisContainer("redis:7") as redis:
-        yield redis
+def test_db_engine():
+    # The engine is already configured in app.db.session to read from .env
+    # which points to the docker-compose postgres instance.
+    Base.metadata.create_all(bind=engine)
+    yield engine
+    Base.metadata.drop_all(bind=engine)
 
 @pytest.fixture(scope="function")
-def test_db(postgres_container):
-    database_url = postgres_container.get_connection_url()
-    engine = create_engine(database_url)
-    Base.metadata.create_all(engine)
-    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+def db_session(test_db_engine):
+    """Creates a new database session for a test."""
+    connection = test_db_engine.connect()
+    transaction = connection.begin()
+    Session = sessionmaker(bind=connection)
+    session = Session()
 
-    def override_get_db():
-        try:
-            db = TestingSessionLocal()
-            yield db
-        finally:
-            db.close()
+    yield session
 
-    app.dependency_overrides[get_db] = override_get_db
-
-    yield TestingSessionLocal
-
-    Base.metadata.drop_all(engine)
+    session.close()
+    transaction.rollback()
+    connection.close()
 
 
 @pytest.fixture(scope="function")
-async def test_client():
-    async with AsyncClient(app=app, base_url="http://test") as client:
+def override_get_db(db_session):
+    """Fixture to override the get_db dependency to use the test session."""
+    def _override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = _override_get_db
+    yield
+    del app.dependency_overrides[get_db]
+
+
+@pytest.fixture(scope="function")
+async def test_client(override_get_db):
+    """Fixture for a test client."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
 
 @pytest.fixture(scope="function")
-def test_user(test_db):
-    db = test_db()
+def test_user(db_session):
+    """Fixture to create a test user."""
     user = User(
         email="test@example.com",
         hashed_password=get_password_hash("testpassword123"),
@@ -67,13 +63,13 @@ def test_user(test_db):
         is_verified=True,
         is_active=True,
     )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    db.close()
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
     return user
 
 @pytest.fixture(scope="function")
 def auth_headers(test_user):
+    """Fixture for authentication headers."""
     token = create_access_token(data={"sub": str(test_user.id)})
     return {"Authorization": f"Bearer {token}"}

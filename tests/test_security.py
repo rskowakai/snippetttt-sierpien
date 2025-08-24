@@ -5,15 +5,13 @@ from jose import jwt
 from app.services.security_service import get_password_hash, verify_password, create_access_token, verify_token
 from app.core.config import settings
 
+async def test_rate_limiting_placeholder(test_client, auth_headers):
+    """Test API rate limiting - this is a placeholder as the logic is not implemented"""
+    # In a real test, you would mock redis and check if the rate limit is hit
+    response = await test_client.get("/api/v1/documents", headers=auth_headers)
+    assert response.status_code == 200 # The stub doesn't have rate limiting implemented
+
 class TestSecurity:
-
-    @pytest.mark.asyncio
-    async def test_rate_limiting_placeholder(self, test_client, auth_headers):
-        """Test API rate limiting - this is a placeholder as the logic is not implemented"""
-        # In a real test, you would mock redis and check if the rate limit is hit
-        response = await test_client.get("/api/v1/documents", headers=auth_headers)
-        assert response.status_code == 200 # The stub doesn't have rate limiting implemented
-
     def test_password_hashing(self):
         """Test password hashing security"""
         password = "testpassword123"

@@ -6,7 +6,6 @@ from app.services.ai_service import AIService
 
 class TestPerformance:
 
-    @pytest.mark.asyncio
     async def test_query_processing_time_placeholder(self, test_client, auth_headers):
         """Test query processing performance - placeholder"""
 
@@ -35,7 +34,7 @@ class TestPerformance:
         assert response.status_code == 200
         assert processing_time < 5.0
 
-    def test_document_chunking_performance(self):
+    async def test_document_chunking_performance(self):
         """Test document chunking performance"""
         from app.services.document_processor import DocumentProcessor
 
@@ -43,7 +42,7 @@ class TestPerformance:
         processor = DocumentProcessor()
 
         start_time = time.time()
-        chunks = processor.create_chunks(large_text)
+        chunks = await processor.create_chunks(large_text)
         processing_time = time.time() - start_time
 
         assert len(chunks) > 0

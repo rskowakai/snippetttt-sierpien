@@ -6,7 +6,6 @@ from app.services.rag_service import EnhancedRAGService
 
 class TestDocumentProcessing:
 
-    @pytest.mark.asyncio
     async def test_document_upload_success(self, test_client, test_user, auth_headers):
         """Test successful document upload"""
 
@@ -26,11 +25,9 @@ class TestDocumentProcessing:
         assert data["original_filename"] == "test.pdf"
         assert data["status"] == "uploaded"
 
-    @pytest.mark.asyncio
-    async def test_document_query_success(self, test_client, test_user, auth_headers, test_db):
+    async def test_document_query_success(self, test_client, test_user, auth_headers, db_session):
         """Test successful document query"""
 
-        db = test_db()
         document = Document(
             filename="test.pdf",
             original_filename="test.pdf",
@@ -40,10 +37,11 @@ class TestDocumentProcessing:
             document_type=DocumentType.PDF,
             status=DocumentStatus.PROCESSED,
             owner_id=test_user.id,
-            weaviate_id="test-weaviate-id"
+            weaviate_id="test-weaviate-id",
+            file_hash="dummy_hash_for_testing"
         )
-        db.add(document)
-        db.commit()
+        db_session.add(document)
+        db_session.commit()
 
         mock_query_result = Query(
             id="c7a748a4-3532-4752-953c-13b731997a35",
@@ -64,8 +62,6 @@ class TestDocumentProcessing:
                 json={"question": "Test question?"},
                 headers=auth_headers
             )
-
-        db.close()
 
         assert response.status_code == 200
         data = response.json()
