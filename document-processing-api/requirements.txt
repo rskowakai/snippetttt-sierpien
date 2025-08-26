@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+sqlalchemy[asyncio]
+asyncpg
+celery[redis]
+pydantic[email]
+python-dotenv
+weaviate-client
+passlib[bcrypt]
+python-jose[cryptography]
+sentry-sdk
+prometheus-fastapi-instrumentator
