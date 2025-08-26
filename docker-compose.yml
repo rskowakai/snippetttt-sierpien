@@ -1,34 +1,65 @@
-version: '3.8'
+version: "3.9"
 
 services:
-  postgres:
-    image: postgres:14-alpine
-    container_name: prawoasystent-postgres
-    environment:
-      POSTGRES_USER: prawo_user
-      POSTGRES_PASSWORD: prawo_password
-      POSTGRES_DB: prawo_db
+  db:
+    image: postgres:15
+    container_name: db_pisma
+    restart: always
+    env_file: .env
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U prawo_user -d prawo_db"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - app-network
 
-  redis:
-    image: redis:7-alpine
-    container_name: prawoasystent-redis
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin_pisma
+    restart: always
+    env_file: .env
     ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - "5050:80"
+    depends_on:
+      - db
+    networks:
+      - app-network
+
+  backend:
+    build: ./backend
+    container_name: backend_pisma
+    restart: always
+    env_file: .env
+    depends_on:
+      - db
+    volumes:
+      - ./backend:/app
+    command: bash -c "alembic upgrade head && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
+    ports:
+      - "8000:8000"
+    networks:
+      - app-network
+
+  frontend:
+    build: ./frontend
+    container_name: frontend_pisma
+    restart: always
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_BASE=${VITE_API_BASE}
+    command: sh -c "npm install && npm run dev -- --host"
+    networks:
+      - app-network
 
 volumes:
-  postgres_data:
-    driver: local
+  db_data:
+
+networks:
+  app-network:
+    driver: bridge
